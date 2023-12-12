@@ -3,142 +3,185 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
+	"strings"
 )
 
-// Point represents a coordinate in the grid.
+// Expand the universe based on the given rules
+func expandUniverse(universe []string) []string {
+	rows := len(universe)
+	if rows == 0 {
+		return []string{}
+	}
+	cols := len(universe[0])
+
+	// Step 1: Identify empty rows and columns
+	emptyRows := make([]bool, rows)
+	emptyCols := make([]bool, cols)
+	for r, row := range universe {
+		for c, val := range row {
+			if val == '#' {
+				emptyRows[r] = true
+				emptyCols[c] = true
+			}
+		}
+	}
+
+	// Calculate new size
+	newRows := 0
+	for _, empty := range emptyRows {
+		if !empty {
+			newRows += 2
+		} else {
+			newRows++
+		}
+	}
+	newCols := 0
+	for _, empty := range emptyCols {
+		if !empty {
+			newCols += 2
+		} else {
+			newCols++
+		}
+	}
+
+	// Step 2: Create new expanded universe
+	newUniverse := make([]string, newRows)
+	for i := range newUniverse {
+		newUniverse[i] = strings.Repeat(".", newCols)
+	}
+
+	// Step 3: Copy data to the new grid
+	newRow := 0
+	for r, row := range universe {
+		newCol := 0
+		for c, val := range row {
+			if val != '.' {
+				s := []rune(newUniverse[newRow])
+				s[newCol] = val
+				newUniverse[newRow] = string(s)
+			}
+			if !emptyCols[c] {
+				newCol++
+			}
+			newCol++
+		}
+		if !emptyRows[r] {
+			newUniverse[newRow+1] = newUniverse[newRow]
+			newRow++
+		}
+		newRow++
+	}
+
+	return newUniverse
+}
+
 type Point struct {
 	x, y int
 }
 
-// readInput reads the input file and returns a 2D slice of galaxies and empty spaces.
-func readInput(filename string) [][]rune {
-	file, err := os.Open(filename)
-	if err != nil {
-		panic(err)
-	}
-	defer file.Close()
-
-	var grid [][]rune
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		grid = append(grid, []rune(line))
-	}
-	return grid
+// Checks if a point is within the grid
+func isValid(universe []string, point Point) bool {
+	return point.x >= 0 && point.x < len(universe) && point.y >= 0 && point.y < len(universe[0])
 }
 
-// expandUniverse doubles the size of rows and columns with no galaxies.
-func expandUniverse(grid [][]rune) [][]rune {
-	rows, cols := len(grid), len(grid[0])
+// BFS to find the shortest path
+func shortestPathLength(universe []string, galaxyMap map[int][2]int, galaxy1, galaxy2 int) int {
+	src := Point{galaxyMap[galaxy1][0], galaxyMap[galaxy1][1]}
+	dest := Point{galaxyMap[galaxy2][0], galaxyMap[galaxy2][1]}
 
-	// Initialize empty rows and columns as true
-	emptyRows, emptyCols := make([]bool, rows), make([]bool, cols)
-	for i := 0; i < rows; i++ {
-		emptyRows[i] = true
-	}
-	for j := 0; j < cols; j++ {
-		emptyCols[j] = true
-	}
-
-	// Mark non-empty rows and columns
-	for i, row := range grid {
-		for j, cell := range row {
-			if cell == '#' {
-				emptyRows[i] = false
-				emptyCols[j] = false
-			}
-		}
-	}
-
-	// Double the size of empty rows and columns
-	newGrid := make([][]rune, 0)
-	for i, row := range grid {
-		newRow := make([]rune, 0)
-		for j, cell := range row {
-			newRow = append(newRow, cell)
-			if emptyCols[j] {
-				newRow = append(newRow, '.')
-			}
-		}
-		newGrid = append(newGrid, newRow)
-		if emptyRows[i] {
-			duplicateRow := make([]rune, len(newRow))
-			copy(duplicateRow, newRow)
-			newGrid = append(newGrid, duplicateRow)
-		}
-	}
-
-	return newGrid
-}
-
-// labelGalaxies assigns unique numbers to galaxies and returns a map of galaxy number to its coordinates.
-func labelGalaxies(grid [][]rune) map[int]Point {
-	galaxyCount := 1
-	galaxies := make(map[int]Point)
-	for i, row := range grid {
-		for j, cell := range row {
-			if cell == '#' {
-				grid[i][j] = rune(galaxyCount)
-				galaxies[galaxyCount] = Point{i, j}
-				galaxyCount++
-			}
-		}
-	}
-	return galaxies
-}
-
-// bfs computes the shortest path between two points using Breadth-First Search.
-func bfs(grid [][]rune, start, end Point, galaxies map[int]Point) int {
+	// Directions: up, down, left, right
 	directions := []Point{{-1, 0}, {1, 0}, {0, -1}, {0, 1}}
-	visited := make(map[Point]bool)
-	queue := []Point{start}
+	visited := make([][]bool, len(universe))
+	for i := range visited {
+		visited[i] = make([]bool, len(universe[0]))
+	}
 
-	visited[start] = true // Mark the starting point as visited
+	queue := []Point{src}
+	visited[src.x][src.y] = true
+	distance := 0
 
-	var steps int
 	for len(queue) > 0 {
 		size := len(queue)
 		for i := 0; i < size; i++ {
 			point := queue[0]
 			queue = queue[1:]
 
-			if point == end {
-				return steps
+			if point.x == dest.x && point.y == dest.y {
+				return distance
 			}
 
 			for _, dir := range directions {
-				next := Point{point.x + dir.x, point.y + dir.y}
-				if next.x >= 0 && next.x < len(grid) && next.y >= 0 && next.y < len(grid[0]) &&
-					!visited[next] {
-					if grid[next.x][next.y] == '.' || (grid[next.x][next.y] >= '1' && grid[next.x][next.y] <= rune('0'+len(galaxies))) {
-						queue = append(queue, next)
-						visited[next] = true
-					}
+				nextPoint := Point{point.x + dir.x, point.y + dir.y}
+				if isValid(universe, nextPoint) && !visited[nextPoint.x][nextPoint.y] {
+					queue = append(queue, nextPoint)
+					visited[nextPoint.x][nextPoint.y] = true
 				}
 			}
 		}
-		steps++
+		distance++
 	}
-	return -1 // Return -1 if no path is found
+
+	return -1 // Destination not reachable
 }
 
-// calculateTotalPathLength computes the sum of the shortest paths between all pairs of galaxies.
-func calculateTotalPathLength(grid [][]rune, galaxies map[int]Point) int {
-	totalPathLength := 0
-	for i := 1; i < len(galaxies); i++ {
-		for j := i + 1; j <= len(galaxies); j++ {
-			pathLength := bfs(grid, galaxies[i], galaxies[j], galaxies)
-			totalPathLength += pathLength
+// Calculate the sum of the shortest path lengths between all pairs of galaxies
+func sumOfShortestPathLengths(universe []string) int {
+	expandedUniverse := expandUniverse(universe)
+	galaxyCount := 0
+	galaxyMap := make(map[int][2]int)
+
+	// Assign unique numbers to galaxies and build galaxy map
+	for i, row := range expandedUniverse {
+		for j, char := range row {
+			if char == '#' {
+				galaxyCount++
+				galaxyMap[galaxyCount] = [2]int{i, j}
+			}
 		}
 	}
-	return totalPathLength
+	fmt.Println(galaxyMap)
+	fmt.Println(shortestPathLength(expandedUniverse, galaxyMap, 1, 7))
+	fmt.Println(shortestPathLength(expandedUniverse, galaxyMap, 3, 6))
+	fmt.Println(shortestPathLength(expandedUniverse, galaxyMap, 8, 9))
+
+	// Calculate the sum of the shortest path lengths
+	sum := 0
+	for i := 1; i <= galaxyCount; i++ {
+		for j := i + 1; j <= galaxyCount; j++ {
+			sum += shortestPathLength(expandedUniverse, galaxyMap, i, j)
+		}
+	}
+
+	return sum
+}
+
+// ReadUniverse reads the universe configuration from a file
+func ReadUniverse(filename string) ([]string, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var universe []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		universe = append(universe, scanner.Text())
+	}
+
+	return universe, scanner.Err()
 }
 
 func main() {
-	grid := readInput("day11.txt")
-	expandedGrid := expandUniverse(grid)
-	galaxies := labelGalaxies(expandedGrid)
-	totalPathLength := calculateTotalPathLength(expandedGrid, galaxies)
-	fmt.Println("Total Path Length:", totalPathLength)
+	// Read universe from file
+	universe, err := ReadUniverse("day11.txt")
+	if err != nil {
+		log.Fatalf("Failed to read universe from file: %v", err)
+	}
+	//fmt.Println(expandUniverse(universe))
+	sum := sumOfShortestPathLengths(universe)
+
+	fmt.Println("The sum of the shortest path lengths between all pairs of galaxies is:", sum)
 }
